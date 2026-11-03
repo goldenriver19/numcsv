@@ -1,6 +1,8 @@
 #include <errno.h>
 #include <limits.h>
+#include <locale.h>
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,7 +15,15 @@ typedef struct {
 
 static int append_value(Values *values, double value) {
     if (values->count == values->capacity) {
-        size_t capacity = values->capacity == 0 ? 16 : values->capacity * 2;
+        size_t capacity;
+        if (values->capacity == 0) {
+            capacity = 16;
+        } else {
+            if (values->capacity > SIZE_MAX / (2 * sizeof *values->items)) {
+                return 0;
+            }
+            capacity = values->capacity * 2;
+        }
         double *items = realloc(values->items, capacity * sizeof *items);
         if (items == NULL) return 0;
         values->items = items;
@@ -26,57 +36,107 @@ static int append_value(Values *values, double value) {
 static char *field_at(const char *line, size_t index) {
     size_t field = 0;
     size_t start = 0;
+    size_t i = 0;
     int in_quotes = 0;
-    int found = 0;
-    size_t end = 0;
-    size_t i;
 
-    for (i = 0; line[i] != '\0'; i++) {
+    while (field < index) {
+        in_quotes = 0;
+        while (line[i] != '\0') {
+            if (line[i] == '"') {
+                if (in_quotes && line[i + 1] == '"') {
+                    i += 2;
+                    continue;
+                }
+                in_quotes = !in_quotes;
+                i++;
+            } else if (!in_quotes &&
+                       (line[i] == ',' || line[i] == '\n' ||
+                        line[i] == '\r')) {
+                break;
+            } else {
+                i++;
+            }
+        }
+
+        if (line[i] == ',') {
+            i++;
+            field++;
+            start = i;
+            continue;
+        }
+        return NULL;
+    }
+
+    in_quotes = 0;
+    while (line[i] != '\0') {
         if (line[i] == '"') {
             if (in_quotes && line[i + 1] == '"') {
-                i++;
+                i += 2;
                 continue;
             }
             in_quotes = !in_quotes;
-        } else if (line[i] == ',' && !in_quotes) {
-            if (field == index) {
-                found = 1;
-                end = i;
-                break;
-            }
-            field++;
-            start = i + 1;
-        } else if ((line[i] == '\n' || line[i] == '\r') && !in_quotes) {
-            if (field == index) {
-                found = 1;
-                end = i;
-                break;
-            }
+            i++;
+        } else if (!in_quotes &&
+                   (line[i] == ',' || line[i] == '\n' ||
+                    line[i] == '\r')) {
             break;
+        } else {
+            i++;
         }
     }
 
-    if (!found && field == index) {
-        found = 1;
-        end = i;
-    }
-    if (!found) return NULL;
+    size_t end = i;
 
-    size_t length = end - start;
-    char *result = malloc(length + 1);
-    if (result == NULL) return NULL;
-    memcpy(result, line + start, length);
-    result[length] = '\0';
+    while (start < end && (line[start] == ' ' || line[start] == '\t' ||
+                           line[start] == '\r' || line[start] == '\n')) {
+        start++;
+    }
+    while (start < end && (line[end - 1] == ' ' || line[end - 1] == '\t' ||
+                           line[end - 1] == '\r' || line[end - 1] == '\n')) {
+        end--;
+    }
+
+    int quoted = end > start && line[start] == '"' &&
+                 line[end - 1] == '"';
+    char *result;
+
+    if (quoted) {
+        size_t close = end - 1;
+        size_t max_length = close - start;
+        result = malloc(max_length + 1);
+        if (result == NULL) return NULL;
+
+        size_t output = 0;
+        size_t j = start + 1;
+        while (j < close) {
+            if (line[j] == '"' && j + 1 < close && line[j + 1] == '"') {
+                result[output++] = '"';
+                j += 2;
+            } else {
+                result[output++] = line[j++];
+            }
+        }
+        result[output] = '\0';
+    } else {
+        size_t length = end - start;
+        result = malloc(length + 1);
+        if (result == NULL) return NULL;
+        memcpy(result, line + start, length);
+        result[length] = '\0';
+    }
 
     char *p = result;
-    while (*p == ' ' || *p == '\t' || *p == '"') p++;
-    if (p != result) memmove(result, p, strlen(p) + 1);
-    size_t len = strlen(result);
-    while (len > 0 &&
-           (result[len - 1] == ' ' || result[len - 1] == '\t' ||
-            result[len - 1] == '"' || result[len - 1] == '\n' ||
-            result[len - 1] == '\r')) {
-        result[--len] = '\0';
+    while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') {
+        p++;
+    }
+    if (p != result) {
+        memmove(result, p, strlen(p) + 1);
+    }
+    size_t length = strlen(result);
+    while (length > 0 &&
+           (result[length - 1] == ' ' || result[length - 1] == '\t' ||
+            result[length - 1] == '\r' || result[length - 1] == '\n')) {
+        result[--length] = '\0';
     }
     return result;
 }
@@ -125,6 +185,8 @@ int main(int argc, char **argv) {
         usage(argv[0]);
         return 2;
     }
+
+    setlocale(LC_NUMERIC, "C");
 
     FILE *file = fopen(path, "r");
     if (file == NULL) {
@@ -184,7 +246,9 @@ int main(int argc, char **argv) {
     if (values.count % 2 == 1) {
         median = values.items[values.count / 2];
     } else {
-        median = (values.items[values.count / 2 - 1] + values.items[values.count / 2]) / 2.0;
+        median = (values.items[values.count / 2 - 1] +
+                  values.items[values.count / 2]) /
+                 2.0;
     }
 
     printf("count: %zu\n", values.count);
