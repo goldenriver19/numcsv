@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <limits.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,7 +14,7 @@ typedef struct {
 static int append_value(Values *values, double value) {
     if (values->count == values->capacity) {
         size_t capacity = values->capacity == 0 ? 16 : values->capacity * 2;
-        double *items = realloc(values->items, capacity * sizeof(double));
+        double *items = realloc(values->items, capacity * sizeof *items);
         if (items == NULL) return 0;
         values->items = items;
         values->capacity = capacity;
@@ -26,29 +27,55 @@ static char *field_at(const char *line, size_t index) {
     size_t field = 0;
     size_t start = 0;
     int in_quotes = 0;
+    int found = 0;
+    size_t end = 0;
     size_t i;
+
     for (i = 0; line[i] != '\0'; i++) {
         if (line[i] == '"') {
+            if (in_quotes && line[i + 1] == '"') {
+                i++;
+                continue;
+            }
             in_quotes = !in_quotes;
         } else if (line[i] == ',' && !in_quotes) {
-            if (field == index) break;
+            if (field == index) {
+                found = 1;
+                end = i;
+                break;
+            }
             field++;
             start = i + 1;
+        } else if ((line[i] == '\n' || line[i] == '\r') && !in_quotes) {
+            if (field == index) {
+                found = 1;
+                end = i;
+                break;
+            }
+            break;
         }
     }
-    size_t end = i;
-    if (field != index) return NULL;
+
+    if (!found && field == index) {
+        found = 1;
+        end = i;
+    }
+    if (!found) return NULL;
+
     size_t length = end - start;
     char *result = malloc(length + 1);
     if (result == NULL) return NULL;
     memcpy(result, line + start, length);
     result[length] = '\0';
-    /* Trim surrounding whitespace and quotes. */
+
     char *p = result;
     while (*p == ' ' || *p == '\t' || *p == '"') p++;
     if (p != result) memmove(result, p, strlen(p) + 1);
     size_t len = strlen(result);
-    while (len > 0 && (result[len - 1] == ' ' || result[len - 1] == '\t' || result[len - 1] == '"' || result[len - 1] == '\n' || result[len - 1] == '\r')) {
+    while (len > 0 &&
+           (result[len - 1] == ' ' || result[len - 1] == '\t' ||
+            result[len - 1] == '"' || result[len - 1] == '\n' ||
+            result[len - 1] == '\r')) {
         result[--len] = '\0';
     }
     return result;
@@ -58,6 +85,16 @@ static int compare_double(const void *a, const void *b) {
     double x = *(const double *)a;
     double y = *(const double *)b;
     return (x > y) - (x < y);
+}
+
+static int parse_column(const char *text) {
+    char *end = NULL;
+    errno = 0;
+    long value = strtol(text, &end, 10);
+    if (errno != 0 || end == text || *end != '\0' || value < 1 || value > INT_MAX) {
+        return -1;
+    }
+    return (int)value;
 }
 
 static void usage(const char *program) {
@@ -71,7 +108,12 @@ int main(int argc, char **argv) {
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-c") == 0 && i + 1 < argc) {
-            column = atoi(argv[++i]);
+            int parsed = parse_column(argv[++i]);
+            if (parsed < 0) {
+                fprintf(stderr, "numcsv: invalid column '%s'\n", argv[i]);
+                return 2;
+            }
+            column = parsed;
         } else if (strcmp(argv[i], "-H") == 0) {
             header = 1;
         } else {
@@ -111,7 +153,7 @@ int main(int argc, char **argv) {
         char *end = NULL;
         errno = 0;
         double value = strtod(text, &end);
-        if (errno != 0 || end == text || *end != '\0') {
+        if (errno != 0 || end == text || *end != '\0' || !isfinite(value)) {
             free(text);
             continue;
         }

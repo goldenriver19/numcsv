@@ -27,3 +27,9 @@ Options:
 - `-H` skips the first row as a header
 
 Output includes count, minimum, maximum, mean, and median.
+
+## Development
+
+```sh
+make test
+```
