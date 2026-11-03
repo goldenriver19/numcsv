@@ -188,10 +188,15 @@ int main(int argc, char **argv) {
 
     setlocale(LC_NUMERIC, "C");
 
-    FILE *file = fopen(path, "r");
-    if (file == NULL) {
-        fprintf(stderr, "numcsv: cannot open %s: %s\n", path, strerror(errno));
-        return 1;
+    FILE *file;
+    if (strcmp(path, "-") == 0) {
+        file = stdin;
+    } else {
+        file = fopen(path, "r");
+        if (file == NULL) {
+            fprintf(stderr, "numcsv: cannot open %s: %s\n", path, strerror(errno));
+            return 1;
+        }
     }
 
     Values values = {0};
@@ -223,14 +228,14 @@ int main(int argc, char **argv) {
         if (!append_value(&values, value)) {
             fprintf(stderr, "numcsv: out of memory\n");
             free(line);
-            fclose(file);
+            if (file != stdin) fclose(file);
             free(values.items);
             return 1;
         }
     }
 
     free(line);
-    fclose(file);
+    if (file != stdin) fclose(file);
 
     if (values.count == 0) {
         fprintf(stderr, "numcsv: no numeric values found\n");
