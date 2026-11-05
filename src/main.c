@@ -1,3 +1,7 @@
+#if !defined(_POSIX_C_SOURCE) || _POSIX_C_SOURCE < 200809L
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #include <errno.h>
 #include <limits.h>
 #include <locale.h>
@@ -235,8 +239,17 @@ int main(int argc, char **argv) {
         }
     }
 
+    int read_failed = ferror(file);
+    if (read_failed) {
+        fprintf(stderr, "numcsv: read error: %s\n", strerror(errno));
+    }
+
     free(line);
     if (file != stdin) fclose(file);
+    if (read_failed) {
+        free(values.items);
+        return 1;
+    }
 
     if (values.count == 0) {
         fprintf(stderr, "numcsv: no numeric values found\n");

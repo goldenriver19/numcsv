@@ -19,7 +19,10 @@ cc -std=c11 -O2 -o numcsv src/main.c -lm
 ```sh
 numcsv data.csv
 numcsv -c 2 -H data.csv
+numcsv - < data.csv
 ```
+
+Pass `-` as the file name to read CSV data from standard input.
 
 Options:
 
