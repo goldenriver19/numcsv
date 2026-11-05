@@ -123,21 +123,22 @@ static char *field_at(const char *line, size_t index) {
         if (result == NULL) return NULL;
         memcpy(result, line + start, length);
         result[length] = '\0';
+
+        char *p = result;
+        while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') {
+            p++;
+        }
+        if (p != result) {
+            memmove(result, p, strlen(p) + 1);
+        }
+        size_t length2 = strlen(result);
+        while (length2 > 0 &&
+               (result[length2 - 1] == ' ' || result[length2 - 1] == '\t' ||
+                result[length2 - 1] == '\r' || result[length2 - 1] == '\n')) {
+            result[--length2] = '\0';
+        }
     }
 
-    char *p = result;
-    while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') {
-        p++;
-    }
-    if (p != result) {
-        memmove(result, p, strlen(p) + 1);
-    }
-    size_t length = strlen(result);
-    while (length > 0 &&
-           (result[length - 1] == ' ' || result[length - 1] == '\t' ||
-            result[length - 1] == '\r' || result[length - 1] == '\n')) {
-        result[--length] = '\0';
-    }
     return result;
 }
 
