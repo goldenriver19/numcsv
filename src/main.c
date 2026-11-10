@@ -213,12 +213,14 @@ int main(int argc, char **argv) {
     int in_quotes = 0;
     int first = 1;
     int read_failed = 0;
+    int read_errno = 0;
 
     while (1) {
         ssize_t chunk_length = getline(&chunk, &chunk_capacity, file);
         if (chunk_length == -1) {
             if (ferror(file)) {
                 read_failed = 1;
+                read_errno = errno;
                 break;
             }
             if (record_length > 0) {
@@ -329,7 +331,8 @@ int main(int argc, char **argv) {
 
     free(chunk);
     if (read_failed) {
-        fprintf(stderr, "numcsv: read error: %s\n", strerror(errno));
+        fprintf(stderr, "numcsv: read error: %s\n",
+                strerror(read_errno != 0 ? read_errno : EIO));
     }
     free(record);
     if (file != stdin) fclose(file);
