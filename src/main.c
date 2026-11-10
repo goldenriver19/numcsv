@@ -172,8 +172,19 @@ int main(int argc, char **argv) {
     const char *path = NULL;
 
     for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "-c") == 0 && i + 1 < argc) {
+        if (strcmp(argv[i], "-c") == 0) {
+            if (i + 1 >= argc) {
+                usage(argv[0]);
+                return 2;
+            }
             int parsed = parse_column(argv[++i]);
+            if (parsed < 0) {
+                fprintf(stderr, "numcsv: invalid column '%s'\n", argv[i]);
+                return 2;
+            }
+            column = parsed;
+        } else if (strncmp(argv[i], "-c", 2) == 0 && argv[i][2] != '\0') {
+            int parsed = parse_column(argv[i] + 2);
             if (parsed < 0) {
                 fprintf(stderr, "numcsv: invalid column '%s'\n", argv[i]);
                 return 2;
