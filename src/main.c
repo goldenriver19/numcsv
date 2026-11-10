@@ -216,11 +216,14 @@ int main(int argc, char **argv) {
     int read_errno = 0;
 
     while (1) {
+        errno = 0;
         ssize_t chunk_length = getline(&chunk, &chunk_capacity, file);
+        int getline_errno = errno;
         if (chunk_length == -1) {
-            if (ferror(file)) {
+            if (ferror(file) || getline_errno != 0) {
                 read_failed = 1;
-                read_errno = errno;
+                read_errno = getline_errno != 0 ? getline_errno
+                            : (errno != 0 ? errno : EIO);
                 break;
             }
             if (record_length > 0) {
@@ -258,6 +261,14 @@ int main(int argc, char **argv) {
         }
 
         size_t n = (size_t)chunk_length;
+        if (record_length > SIZE_MAX - n - 1) {
+            fprintf(stderr, "numcsv: input too large\n");
+            free(chunk);
+            free(record);
+            if (file != stdin) fclose(file);
+            free(values.items);
+            return 1;
+        }
         if (record_length + n + 1 > record_capacity) {
             size_t new_capacity = record_capacity == 0 ? 256 : record_capacity;
             while (new_capacity < record_length + n + 1) {
