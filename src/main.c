@@ -205,46 +205,133 @@ int main(int argc, char **argv) {
     }
 
     Values values = {0};
-    char *line = NULL;
-    size_t line_capacity = 0;
-    ssize_t length;
+    char *chunk = NULL;
+    size_t chunk_capacity = 0;
+    char *record = NULL;
+    size_t record_capacity = 0;
+    size_t record_length = 0;
+    int in_quotes = 0;
     int first = 1;
+    int read_failed = 0;
 
-    while ((length = getline(&line, &line_capacity, file)) != -1) {
-        if (first && header) {
-            first = 0;
-            continue;
+    while (1) {
+        ssize_t chunk_length = getline(&chunk, &chunk_capacity, file);
+        if (chunk_length == -1) {
+            if (ferror(file)) {
+                read_failed = 1;
+                break;
+            }
+            if (record_length > 0) {
+                record[record_length] = '\0';
+                if (first && header) {
+                    first = 0;
+                } else {
+                    first = 0;
+                    char *text = field_at(record, (size_t)column - 1);
+                    if (text != NULL) {
+                        if (text[0] != '\0') {
+                            char *end = NULL;
+                            errno = 0;
+                            double value = strtod(text, &end);
+                            if (errno == 0 && end != text && *end == '\0' &&
+                                isfinite(value)) {
+                                if (!append_value(&values, value)) {
+                                    fprintf(stderr, "numcsv: out of memory\n");
+                                    free(text);
+                                    free(chunk);
+                                    free(record);
+                                    if (file != stdin) fclose(file);
+                                    free(values.items);
+                                    return 1;
+                                }
+                            }
+                        }
+                        free(text);
+                    }
+                }
+                record_length = 0;
+                in_quotes = 0;
+            }
+            break;
         }
-        first = 0;
-        char *text = field_at(line, (size_t)column - 1);
-        if (text == NULL) continue;
-        if (text[0] == '\0') {
-            free(text);
-            continue;
+
+        size_t n = (size_t)chunk_length;
+        if (record_length + n + 1 > record_capacity) {
+            size_t new_capacity = record_capacity == 0 ? 256 : record_capacity;
+            while (new_capacity < record_length + n + 1) {
+                if (new_capacity > SIZE_MAX / 2) {
+                    new_capacity = record_length + n + 1;
+                    break;
+                }
+                new_capacity *= 2;
+            }
+            char *new_record = realloc(record, new_capacity);
+            if (new_record == NULL) {
+                fprintf(stderr, "numcsv: out of memory\n");
+                free(chunk);
+                free(record);
+                if (file != stdin) fclose(file);
+                free(values.items);
+                return 1;
+            }
+            record = new_record;
+            record_capacity = new_capacity;
         }
-        char *end = NULL;
-        errno = 0;
-        double value = strtod(text, &end);
-        if (errno != 0 || end == text || *end != '\0' || !isfinite(value)) {
-            free(text);
-            continue;
+
+        memcpy(record + record_length, chunk, n);
+        record_length += n;
+        record[record_length] = '\0';
+
+        for (size_t i = 0; i < n; ) {
+            if (chunk[i] == '"') {
+                if (in_quotes && i + 1 < n && chunk[i + 1] == '"') {
+                    i += 2;
+                    continue;
+                }
+                in_quotes = !in_quotes;
+                i++;
+            } else {
+                i++;
+            }
         }
-        free(text);
-        if (!append_value(&values, value)) {
-            fprintf(stderr, "numcsv: out of memory\n");
-            free(line);
-            if (file != stdin) fclose(file);
-            free(values.items);
-            return 1;
+
+        if (!in_quotes) {
+            if (first && header) {
+                first = 0;
+            } else {
+                first = 0;
+                char *text = field_at(record, (size_t)column - 1);
+                if (text != NULL) {
+                    if (text[0] != '\0') {
+                        char *end = NULL;
+                        errno = 0;
+                        double value = strtod(text, &end);
+                        if (errno == 0 && end != text && *end == '\0' &&
+                            isfinite(value)) {
+                            if (!append_value(&values, value)) {
+                                fprintf(stderr, "numcsv: out of memory\n");
+                                free(text);
+                                free(chunk);
+                                free(record);
+                                if (file != stdin) fclose(file);
+                                free(values.items);
+                                return 1;
+                            }
+                        }
+                    }
+                    free(text);
+                }
+            }
+            record_length = 0;
+            in_quotes = 0;
         }
     }
 
-    int read_failed = ferror(file);
+    free(chunk);
     if (read_failed) {
         fprintf(stderr, "numcsv: read error: %s\n", strerror(errno));
     }
-
-    free(line);
+    free(record);
     if (file != stdin) fclose(file);
     if (read_failed) {
         free(values.items);

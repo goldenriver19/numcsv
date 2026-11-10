@@ -52,6 +52,35 @@ median: 15
 EOF
 check quoted -H -c 2 "$tmp/quoted.csv"
 
+cat >"$tmp/quotedcomma.csv" <<'EOF'
+id,value
+1,"a,b"
+2,3
+EOF
+cat >"$tmp/quotedcomma.expected" <<'EOF'
+count: 2
+min: 1
+max: 2
+mean: 1.5
+median: 1.5
+EOF
+check quotedcomma -H -c 1 "$tmp/quotedcomma.csv"
+
+cat >"$tmp/multiline.csv" <<'EOF'
+id,value
+1,"hello
+world"
+2,3
+EOF
+cat >"$tmp/multiline.expected" <<'EOF'
+count: 2
+min: 1
+max: 2
+mean: 1.5
+median: 1.5
+EOF
+check multiline -H -c 1 "$tmp/multiline.csv"
+
 cat >"$tmp/invalid.csv" <<'EOF'
 values
 1
