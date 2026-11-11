@@ -162,6 +162,24 @@ static int parse_column(const char *text) {
     return (int)value;
 }
 
+static void trim_in_place(char *text) {
+    char *start = text;
+    while (*start == ' ' || *start == '\t' || *start == '\r' ||
+           *start == '\n') {
+        start++;
+    }
+    if (start != text) {
+        memmove(text, start, strlen(start) + 1);
+    }
+    size_t length = strlen(text);
+    while (length > 0 && (text[length - 1] == ' ' ||
+                          text[length - 1] == '\t' ||
+                          text[length - 1] == '\r' ||
+                          text[length - 1] == '\n')) {
+        text[--length] = '\0';
+    }
+}
+
 static void usage(const char *program) {
     fprintf(stderr, "Usage: %s [-c COLUMN] [-H] FILE\n", program);
 }
@@ -245,6 +263,7 @@ int main(int argc, char **argv) {
                     first = 0;
                     char *text = field_at(record, (size_t)column - 1);
                     if (text != NULL) {
+                        trim_in_place(text);
                         if (text[0] != '\0') {
                             char *end = NULL;
                             errno = 0;
@@ -326,6 +345,7 @@ int main(int argc, char **argv) {
                 first = 0;
                 char *text = field_at(record, (size_t)column - 1);
                 if (text != NULL) {
+                    trim_in_place(text);
                     if (text[0] != '\0') {
                         char *end = NULL;
                         errno = 0;

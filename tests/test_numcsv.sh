@@ -81,6 +81,20 @@ median: 1.5
 EOF
 check multiline -H -c 1 "$tmp/multiline.csv"
 
+cat >"$tmp/quotedspace.csv" <<'EOF'
+value
+" 10 "
+20
+EOF
+cat >"$tmp/quotedspace.expected" <<'EOF'
+count: 2
+min: 10
+max: 20
+mean: 15
+median: 15
+EOF
+check quotedspace -H -c 1 "$tmp/quotedspace.csv"
+
 cat >"$tmp/invalid.csv" <<'EOF'
 values
 1
